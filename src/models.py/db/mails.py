@@ -5,9 +5,10 @@
 """
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, DateTime
+from sqlalchemy import String, DateTime, text
 from sqlalchemy.orm import mapped_column, Mapped, relationship
 
 from ._common import Base
@@ -43,43 +44,55 @@ class Mail(Base):
         String(36),
         primary_key=True,
         index=True,
-        comment="Identifiant unique du mail"
+        comment="Identifiant unique du mail",
     )
     sender: Mapped[str] = mapped_column(
         String(255),
         nullable=False,
-        comment="Expéditeur du mail"
+        comment="Expéditeur du mail",
+    )
+    # Destinataires conservés uniquement pour les besoins de retry.
+    # Pour l'aspect RGPD, les destinataires ne sont pas conservés de manière permanente.
+    recipients: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        comment="Destinataires du mail",
     )
     subject: Mapped[str] = mapped_column(
         String(255),
-        nullable=False,
-        comment="Sujet du mail"
+        nullable=True,
+        comment="Sujet du mail",
     )
-    body: Mapped[str] = mapped_column(
-        String,
-        nullable=False,
-        comment="Contenu du mail"
+    template: Mapped[str] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Modèle du mail",
+    )
+    jinja_values: Mapped[str] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Paires clé-valeur Jinja de remplissage du template",
     )
     has_attachments: Mapped[bool] = mapped_column(
         nullable=False,
         default=False,
-        server_default="false",
-        comment="Indique si le mail a des pièces jointes"
+        server_default=text("0"),
+        comment="Indique si le mail a des pièces jointes",
     )
     provider_id: Mapped[str] = mapped_column(
         String(36),
         nullable=False,
-        comment="Identifiant du fournisseur du mail"
+        comment="Identifiant du fournisseur du mail",
     )
-    sent_at: Mapped[DateTime] = mapped_column(
+    sent_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
-        comment="Date et heure d'envoi du mail"
+        comment="Date et heure d'envoi du mail",
     )
     statuses: Mapped[list["Status"]] = relationship(
         back_populates="mail",
         cascade="all, delete-orphan",
         order_by="Status.created_at",
         comment="Relation vers les statuts associés au mail",
-        passive_deletes=True
+        passive_deletes=True,
     )

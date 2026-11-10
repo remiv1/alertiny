@@ -23,6 +23,10 @@ class MailStatus(Enum):
     FAILED = "failed"
     UNKNOWN = "unknown"
 
+    @classmethod
+    def as_sql_values(cls) -> str:
+        return ', '.join(f"'{st.value}'" for st in cls)
+
 class Status(Base):
     """Modèle représentant un statut dans la base de données.
 
@@ -34,7 +38,7 @@ class Status(Base):
     __tablename__ = "status"
     __table_args__ = (
         CheckConstraint(
-            f"status IN ({', '.join(f'\'{st.value}\'' for st in MailStatus)})",
+            f"status IN ({MailStatus.as_sql_values()})",
             name="ck_status"),
     )
 
@@ -54,12 +58,12 @@ class Status(Base):
         String(255),
         nullable=False,
         comment="Nom du statut",
-        default=MailStatus.PENDING.value,
+        server_default=MailStatus.PENDING.value,
     )
-    comment: Mapped[str] = mapped_column(
+    comment: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
-        comment="Commentaire associé au statut",
+        comment="Commentaire associé au statut, notamment en cas d'échec",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
