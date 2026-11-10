@@ -1,0 +1,8 @@
+mail:
+  from: "mail@mail.com"
+
+  smtp:
+    server: "mail.dom.com"
+    port: 465
+    tls: true
+    starttls: false

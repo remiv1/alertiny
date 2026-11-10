@@ -1,0 +1,37 @@
+template_folder: "/templates"
+
+templates:
+
+  - name: "backup_failed"
+    subject: "Échec de sauvegarde sur {{ hostname }}"
+    template: "backup_failed.html"
+    variables:
+      hostname:
+        required: true
+        type: string
+
+      date:
+        required: false
+        type: string
+
+      error:
+        required: false
+        type: string
+
+
+  - name: "service_down"
+    subject: "Service {{ service }} indisponible"
+    template: "service_down.html"
+
+    variables:
+      hostname:
+        required: true
+        type: string
+
+      service:
+        required: true
+        type: string
+
+      date:
+        required: false
+        type: string
