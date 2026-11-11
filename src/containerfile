@@ -1,14 +1,45 @@
-FROM python:3.14-slim
+FROM python:3.14-slim AS base
 
-WORKDIR /app
+LABEL maintainer="rverschuur@audit-io.fr"
+LABEL org.opencontainers.image.title="alertiny"
+LABEL org.opencontainers.image.description="Alertiny application for alert management"
+LABEL org.opencontainers.image.version="0.1"
+LABEL org.opencontainers.image.authors="rverschuur@audit-io.fr"
+LABEL org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.source="https://github.com/remiv1/alertiny"
 
-COPY requirements.txt /tmp/
-RUN pip install --no-cache-dir -r /tmp/requirements.txt
+WORKDIR /etc/alertiny
 
-COPY ../src .
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    sqlite3 \
+    supervisor \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN useradd -m appuser
+ENV UVICORN_HOST="0.0.0.0" \
+    UVICORN_PORT="8465" \
+    UVICORN_WORKERS="2" \
+    UVICORN_LOG_LEVEL="info" \
+    UVICORN_ACCESS_LOG="false"
 
-USER appuser
+COPY ./src/requirements.txt /tmp/
+RUN pip install --upgrade pip \
+    && pip install --no-cache-dir -r /tmp/requirements.txt \
+    && useradd \
+        --system \
+        --uid 1000 \
+        --user-group \
+        --create-home \
+        --home-dir /home/alertiny \
+        -m alertiny \
+    && mkdir -p /data /etc/alertiny /opt/alertiny
+    
+COPY ./src /opt/alertiny
+COPY ./src/config /etc/alertiny
 
-CMD ["python", "main.py"]
+RUN chown -R alertiny:alertiny /data /etc/alertiny /opt/alertiny /var/log/
+
+FROM base AS runtime
+
+USER alertiny
+ENTRYPOINT ["sh", "/opt/alertiny/supervisor/entrypoint.sh"]

@@ -39,3 +39,46 @@ Projet développé en Python avec projet de passer en Go si souhait d'apprendre 
 ## Conteneurisation
 
 Le projet utilise Podman pour la conteneurisation des services et la gestion des images.
+
+## Gestion des retry
+
+```text
+POST /mails
+    │
+    ├── INSERT mail
+    │      status = queued
+    │      retry_count = 0
+    │
+    ├── soumission au Worker(mail_id)
+    │
+    └── retour immédiat tracking_id
+                │
+                ▼
+        Worker tente l'envoi                           Si Crash
+                │                                          │
+          ┌─────┴─────┐                                    │
+          │           │                                    │
+        succès       échec  <───────────────────── Lancement réconciliation
+          │           │
+          ▼           ▼
+        SENT      retry_count++
+                      │
+                ┌─────┴──────────┐
+                │                │
+          retry < max       retry >= max
+                │                │
+                ▼                ▼
+            PENDING           FAILED
+                │
+                ├── next_retry_at = ...
+                │
+                └── APScheduler.add_job(mail_id)
+                          │
+                          ▼
+                      délai écoulé
+                          │
+                          ▼
+                  Worker(mail_id)
+                          │
+                          └── nouvelle tentative
+```

@@ -11,12 +11,13 @@ from typing import TYPE_CHECKING
 from sqlalchemy import String, DateTime, text
 from sqlalchemy.orm import mapped_column, Mapped, relationship
 
-from ._common import Base
+from ._common import Mixins
+from ..pydantics.mails import MailIncoming
 
 if TYPE_CHECKING:
     from .status import Status
 
-class Mail(Base):
+class Mail(Mixins):
     """Modèle représentant un mail dans la base de données.
     
     :param id: Identifiant UUID du mail.
@@ -93,6 +94,17 @@ class Mail(Base):
         back_populates="mail",
         cascade="all, delete-orphan",
         order_by="Status.created_at",
-        comment="Relation vers les statuts associés au mail",
         passive_deletes=True,
     )
+
+    @classmethod
+    def from_incoming(cls, mail: MailIncoming) -> Mail:
+        """Crée une instance de Mail à partir d'un MailIncoming."""
+        return cls(
+            sender=mail.sender,
+            recipients=",".join([r.email for r in mail.recipient]),
+            subject=mail.subject,
+            template=mail.template,
+            jinja_values=",".join([f"{j.key}={j.value}" for j in mail.jinja_values]),
+            has_attachments=bool(mail.attachments),
+        )

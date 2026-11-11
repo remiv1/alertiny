@@ -6,3 +6,5 @@ mail:
     port: 465
     tls: true
     starttls: false
+
+  retries: 3

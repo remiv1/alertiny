@@ -12,12 +12,13 @@ from datetime import datetime
 from sqlalchemy import String, DateTime, CheckConstraint, ForeignKey, func
 from sqlalchemy.orm import mapped_column, Mapped, relationship
 
-from ._common import Base
+from ._common import Mixins
 
 if TYPE_CHECKING:
     from .mails import Mail
 
 class MailStatus(Enum):
+    """Enum représentant les différents statuts possibles d'un mail."""
     PENDING = "pending"
     SENT = "sent"
     FAILED = "failed"
@@ -25,9 +26,10 @@ class MailStatus(Enum):
 
     @classmethod
     def as_sql_values(cls) -> str:
+        """Retourne les valeurs SQL de l'énumération."""
         return ', '.join(f"'{st.value}'" for st in cls)
 
-class Status(Base):
+class Status(Mixins):
     """Modèle représentant un statut dans la base de données.
 
     :param id: Identifiant UUID du statut.
@@ -68,10 +70,9 @@ class Status(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        server_default=func.now(),
+        server_default=func.now(),  # pylint: disable=E1102
         comment="Date de création du statut",
     )
     mail: Mapped["Mail"] = relationship(
         back_populates="statuses",
-        comment="Relation vers le mail associé au statut",
     )

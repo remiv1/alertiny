@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light">
+  <title>Échec de sauvegarde</title>
+  <style>
+    body { margin: 0; padding: 0; background-color: #edf2f3; color: #203238; font-family: Arial, Helvetica, sans-serif; }
+    .preheader { display: none; max-height: 0; overflow: hidden; opacity: 0; color: transparent; }
+    .email-background { box-sizing: border-box; min-height: 100vh; padding: 32px 16px; background-color: #edf2f3; }
+    .email-frame { box-sizing: border-box; width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; }
+    .header { padding: 24px 32px; border-bottom: 1px solid #dce5e7; }
+    .brand { color: #31545b; font-size: 13px; font-weight: bold; letter-spacing: 1px; }
+    .header-label { float: right; color: #9a4f08; font-size: 12px; font-weight: bold; }
+    .intro-section { padding: 36px 32px 16px; }
+    .eyebrow { margin: 0 0 12px; color: #a65308; font-size: 13px; font-weight: bold; }
+    .heading { margin: 0; color: #203238; font-size: 28px; line-height: 1.25; }
+    .intro { margin: 18px 0 0; color: #43585e; font-size: 16px; line-height: 1.6; }
+    .section { padding: 8px 32px 24px; }
+    .status-panel { border-left: 4px solid #c56812; background-color: #fff6e8; }
+    .status-copy { padding: 16px 18px; color: #674014; font-size: 14px; line-height: 1.6; }
+    .error-section { padding: 0 32px 24px; }
+    .error-heading { margin: 0 0 8px; color: #203238; font-size: 16px; }
+    .error-details { margin: 0; padding: 14px; overflow-wrap: anywhere; white-space: pre-wrap; background-color: #f3f6f6; color: #35494e; font-family: Consolas, 'Courier New', monospace; font-size: 13px; line-height: 1.5; }
+    .action-copy { padding: 0 32px 36px; color: #43585e; font-size: 15px; line-height: 1.6; }
+    .footer { padding: 18px 32px; border-top: 1px solid #dce5e7; color: #6b7e83; font-size: 12px; line-height: 1.5; }
+    @media only screen and (max-width: 480px) {
+      .email-background { padding: 20px 10px; }
+      .header, .intro-section { padding-right: 20px; padding-left: 20px; }
+      .header-label { float: none; display: block; margin-top: 8px; }
+      .section, .error-section, .action-copy, .footer { padding-right: 20px; padding-left: 20px; }
+      .heading { font-size: 24px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="preheader">
+    La sauvegarde sur {{ hostname | e }} a rencontré une erreur.
+  </div>
+  <div class="email-background">
+    <main class="email-frame">
+      <header class="header">
+        <span class="brand">ALERTINY</span>
+        <span class="header-label">ALERTE DE SAUVEGARDE</span>
+      </header>
+      <section class="intro-section">
+        <p class="eyebrow">ACTION REQUISE</p>
+        <h1 class="heading">Échec de la sauvegarde</h1>
+        <p class="intro">
+          La sauvegarde prévue sur <strong>{{ hostname | e }}</strong> ne s’est pas terminée correctement.
+        </p>
+      </section>
+      <section class="section">
+        <div class="status-panel">
+          <div class="status-copy">
+            <strong>Hôte :</strong> {{ hostname | e }}<br>
+            {% if date is defined and date %}
+            <strong>Date :</strong> {{ date | e }}
+            {% else %}
+            <strong>Date :</strong> non précisée
+            {% endif %}
+          </div>
+        </div>
+      </section>
+      {% if error is defined and error %}
+      <section class="error-section">
+        <h2 class="error-heading">Détail de l’erreur</h2>
+        <pre class="error-details">{{ error | e }}</pre>
+      </section>
+      {% endif %}
+      <p class="action-copy">
+        Consultez les journaux de sauvegarde pour identifier la cause, puis relancez l’opération si nécessaire.
+      </p>
+      <footer class="footer">
+        Cette notification a été générée automatiquement par Alertiny.
+      </footer>
+    </main>
+  </div>
+</body>
+</html>

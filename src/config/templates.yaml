@@ -8,15 +8,15 @@ templates:
     variables:
       hostname:
         required: true
-        type: string
+        type: str
 
       date:
         required: false
-        type: string
+        type: str
 
       error:
         required: false
-        type: string
+        type: str
 
 
   - name: "service_down"
@@ -26,12 +26,12 @@ templates:
     variables:
       hostname:
         required: true
-        type: string
+        type: str
 
       service:
         required: true
-        type: string
+        type: str
 
       date:
         required: false
-        type: string
+        type: str

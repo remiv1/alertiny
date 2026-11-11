@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light">
+  <title>Service indisponible</title>
+  <style>
+    body { margin: 0; padding: 0; background-color: #edf2f3; color: #203238; font-family: Arial, Helvetica, sans-serif; }
+    .preheader { display: none; max-height: 0; overflow: hidden; opacity: 0; color: transparent; }
+    .email-background { box-sizing: border-box; min-height: 100vh; padding: 32px 16px; background-color: #edf2f3; }
+    .email-frame { box-sizing: border-box; width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; }
+    .header { padding: 24px 32px; border-bottom: 1px solid #dce5e7; }
+    .brand { color: #31545b; font-size: 13px; font-weight: bold; letter-spacing: 1px; }
+    .header-label { float: right; color: #a32f36; font-size: 12px; font-weight: bold; }
+    .intro-section { padding: 36px 32px 16px; }
+    .eyebrow { margin: 0 0 12px; color: #a32f36; font-size: 13px; font-weight: bold; }
+    .heading { margin: 0; color: #203238; font-size: 28px; line-height: 1.25; }
+    .intro { margin: 18px 0 0; color: #43585e; font-size: 16px; line-height: 1.6; }
+    .section { padding: 8px 32px 24px; }
+    .status-panel { border-left: 4px solid #b53a40; background-color: #fff0ef; }
+    .status-copy { padding: 16px 18px; color: #672b30; font-size: 14px; line-height: 1.6; }
+    .action-copy { padding: 0 32px 36px; color: #43585e; font-size: 15px; line-height: 1.6; }
+    .footer { padding: 18px 32px; border-top: 1px solid #dce5e7; color: #6b7e83; font-size: 12px; line-height: 1.5; }
+    @media only screen and (max-width: 480px) {
+      .email-background { padding: 20px 10px; }
+      .header, .intro-section { padding-right: 20px; padding-left: 20px; }
+      .header-label { float: none; display: block; margin-top: 8px; }
+      .section, .action-copy, .footer { padding-right: 20px; padding-left: 20px; }
+      .heading { font-size: 24px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="preheader">
+    Le service {{ service | e }} est indisponible sur {{ hostname | e }}.
+  </div>
+  <div class="email-background">
+    <main class="email-frame">
+      <header class="header">
+        <span class="brand">ALERTINY</span>
+        <span class="header-label">ALERTE DE DISPONIBILITÉ</span>
+      </header>
+      <section class="intro-section">
+        <p class="eyebrow">SERVICE À VÉRIFIER</p>
+        <h1 class="heading">Service indisponible</h1>
+        <p class="intro">
+          Le service <strong>{{ service | e }}</strong> ne répond pas sur l’hôte <strong>{{ hostname | e }}</strong>.
+        </p>
+      </section>
+      <section class="section">
+        <div class="status-panel">
+          <div class="status-copy">
+            <strong>Service :</strong> {{ service | e }}<br>
+            <strong>Hôte :</strong> {{ hostname | e }}<br>
+            {% if date is defined and date %}
+            <strong>Détecté le :</strong> {{ date | e }}
+            {% else %}
+            <strong>Détecté le :</strong> date non précisée
+            {% endif %}
+          </div>
+        </div>
+      </section>
+      <p class="action-copy">
+        Vérifiez l’état du service, son réseau et ses dépendances. Après intervention, contrôlez son rétablissement dans votre outil de supervision.
+      </p>
+      <footer class="footer">
+        Cette notification a été générée automatiquement par Alertiny.
+      </footer>
+    </main>
+  </div>
+</body>
+</html>

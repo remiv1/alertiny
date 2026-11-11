@@ -1,10 +1,10 @@
 {
     "typeCheckingMode": "strict",
     "reportMissingTypeStubs": false,
+    "reportInvalidStubStatement": false,
     "stubPath": "typings",
+    "venvPath": ".venv",
     "extraPaths": [
-        "src",
-        "src/api",
-        "scripts"
+        "src"
     ]
 }
