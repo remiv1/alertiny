@@ -21,19 +21,18 @@ def get_mails(session: SessionDep) -> dict[str, object]:
     return {"message": mails}
 
 @router.post("/", tags=["api", "v1", "mails"])
-def create_mail(session: SessionDep, data: MailIncoming) -> dict[str, str]:
+async def create_mail(session: SessionDep, data: MailIncoming) -> dict[str, str]:
     """Crée un nouveau mail et retourne un template réalisé."""
     repo = MailsRepository(session)
     mail_content = repo.generate_mail(mail=data)
-    repo.create_mail(mail=data)
+    await repo.send_new_mail(mail=data)
     return {"message": mail_content}
 
 @router.post("/send", tags=["api", "v1", "mails"])
-def send_mail(session: SessionDep, data: MailIncoming) -> dict[str, str]:
+async def send_mail(session: SessionDep, data: MailIncoming) -> dict[str, str]:
     """Envoie un mail."""
     repo = MailsRepository(session)
-    mail = repo.create_mail(mail=data)
-    repo.send_mail(mail=mail)
+    await repo.send_new_mail(mail=data)
     return {"message": "Mail sent"}
 
 @router.put("/send/{mail_id}", tags=["api", "v1", "mails"])

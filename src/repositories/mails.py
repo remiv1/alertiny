@@ -5,43 +5,163 @@
 """
 from __future__ import annotations
 
-from typing import Sequence, Any
+from typing import Sequence, Any, Optional, overload, Literal, cast
+from email.message import Message
+from email.utils import make_msgid
+from smtplib import SMTP, SMTPException, SMTP_SSL
+from imaplib import IMAP4, Time2Internaldate
+import time
 
 from sqlalchemy import select
 from jinja2 import Template
 
 from params.application import SessionDep
+from params.mails import MailConfig, load_mail_config
 from models.db.mails import Mail
-from models.pydantics.mails import MailIncoming
+from models.pydantics.mails import MailIncoming, JinjaValues
+
+class MailClient:
+    """Client pour l'envoi des mails."""
+
+    def __init__(self, mail: Mail, config: MailConfig) -> None:
+        self.mail: Mail = mail
+        self.config = config
+        self.email_message: Message | None = None
+        self.smtp: SMTP | None = None
+        self.imap: IMAP4 | None = None
+        self.timeout: float = 0.0
+
+    def _create_mail(self) -> "MailClient":
+        self.email_message = Message()
+        self.email_message["From"] = self.config.sender
+        self.email_message["To"] = self.mail.recipients
+        self.email_message["Subject"] = self.mail.subject
+        self.email_message["Message-ID"] = make_msgid(domain=self.mail.sender.split("@")[-1])
+        return self
+
+    def send(self) -> None:
+        """Envoie un mail."""
+        self._create_mail()
+        if not self.email_message:
+            raise ValueError("Email message has not been created.")
+        if self.config.smtp.tls:
+            smtp: SMTP = SMTP_SSL(
+                self.config.smtp.server,
+                self.config.smtp.port,
+                timeout=self.timeout,
+            )
+        else:
+            smtp = SMTP(
+                self.config.smtp.server,
+                self.config.smtp.port,
+                timeout=self.timeout,
+            )
+        self.smtp = smtp
+        try:
+            with smtp as server:
+                if self.config.smtp.starttls and not self.config.smtp.tls:
+                    server.starttls()
+                server.send_message(self.email_message)
+        except SMTPException as e:
+            raise RuntimeError("Failed to send email") from e
+
+    def copy(self) -> bool:
+        """Vérifie si un mail a déjà été copié dans les éléments envoyés."""
+        if self.imap is None:
+            raise RuntimeError("IMAP client has not been initialized.")
+        if self.email_message is None:
+            raise ValueError("Email message has not been created.")
+        try:
+            self.imap.append("Sent", "", Time2Internaldate(time.time()), self.email_message.as_bytes())
+            return True
+        except IMAP4.error:
+            return False
+
 
 class MailsRepository:
-    """Dépôt pour la gestion des mails."""
+    """Dépôt pour la gestion des mails. Ce dépôt encapsule la logique d'accès aux données des mails
+    et fournit les méthodes pour interagir avec ces données.
+
+    .. methodes::
+        - `get_mails` : Retourne la liste des mails ou None si aucun mail n'est trouvé.
+        - `get_mail_by_id` : Retourne un mail correspondant à l'identifiant fourni ou None si aucun
+        mail n'est trouvé.
+        - `get_mail_by` : Retourne un mail correspondant à l'attribut et à la valeur fournis ou None
+        si aucun mail n'est trouvé.
+        - `create_mail` : Crée un nouveau mail à partir des données fournies. et l'envoie.
+        - `generate_mail` : Génère le contenu d'un mail à partir des données fournies et l'ajoute à
+        la base de données.
+        - `send_mail` : Envoie un mail existant.
+    
+    .. responsabilité : métier
+    .. auteur:: Rémi Verschuur <rverschuur@audit-io.fr>
+    .. from_version:: initial
+    """
     def __init__(self, session: SessionDep) -> None:
         self.session = session
+        self.config = load_mail_config()
+        self.mail: Mail | None = None
+        self.client: MailClient | None = None
 
-    def get_mails(self) -> Sequence[Mail]:
+    def _sender(self, *, mail: Mail) -> None:
+        """Envoie un mail en interne."""
+        MailClient(mail, self.config).send()
+
+    def _compile(self) -> Any:
+        """Compile le contenu du mail actuel."""
+        if not self.mail:
+            raise ValueError("No mail is currently set for compilation.")
+        template = Template(self.mail.template)
+        return template.render(
+            **{j.key: j.value for j in cast(list[JinjaValues], self.mail.jinja_values)}
+        )
+
+    def get_mails(self) -> Optional[Sequence[Mail]]:
         """Récupère la liste des mails."""
         stmt = select(Mail)
         result = self.session.execute(stmt)
-        return result.scalars().all()
+        return result.scalars().one_or_none()
 
-    def get_mail_by_id(self, mail_id: str) -> Mail | None:
+    @overload
+    def get_mail_by_id(self, mail_id: str, chaine:Literal[True]) -> "MailsRepository": ...
+    @overload
+    def get_mail_by_id(self, mail_id: str, chaine: Literal[False]) -> "MailsRepository":...
+    def get_mail_by_id(self, mail_id: str, chaine: bool = False) -> "MailsRepository | Mail | None":
         """Récupère un mail par son identifiant."""
         stmt = select(Mail).where(Mail.id == mail_id)
-        result = self.session.execute(stmt)
-        return result.scalars().first()
+        result = self.session.execute(stmt).scalar_one_or_none()
+        if chaine:
+            self.mail = result
+            return self
+        return result
 
-    def get_mail_by(self, attribut: str, *, value: Any) -> Mail | None:
+    @overload
+    def get_mail_by(self, attribut: str, *, value: Any, chaine: Literal[True]) -> "MailsRepository":
+        ...
+    @overload
+    def get_mail_by(self, attribut: str, *, value: Any, chaine: Literal[False]) -> Mail | None:
+        ...
+    def get_mail_by(
+        self,
+        attribut: str,
+        *,
+        value: Any,
+        chaine: bool = False,
+    ) -> "MailsRepository | Mail | None":
         """Récupère un mail par un attribut spécifique."""
         stmt = select(Mail).where(getattr(Mail, attribut) == value)
-        result = self.session.execute(stmt)
-        return result.scalars().first()
+        result = self.session.execute(stmt).scalar_one_or_none()
+        if chaine:
+            self.mail = result
+            return self
+        return result
 
-    def create_mail(self, *, mail: MailIncoming) -> Mail:
+    def send_new_mail(self, *, mail: MailIncoming) -> Mail:
         """Crée un nouveau mail."""
         mail = Mail.from_incoming(mail)
         self.session.add(mail)
         self.session.commit()
+        self._sender(mail=mail)
         return mail
 
     def generate_mail(self, *, mail: MailIncoming) -> str:
@@ -49,10 +169,12 @@ class MailsRepository:
         mail_instance = Mail.from_incoming(mail)
         self.session.add(mail_instance)
         self.session.commit()
-        template = Template(mail.template)
-        return template.render(**{j.key: j.value for j in mail.jinja_values})
+        self.mail = mail_instance
+        return self._compile()
 
-    def send_mail(self, *, mail: Mail) -> None:
+    def send_mail(self) -> None:
         """Envoie un mail."""
-        # Implémentation de l'envoi de mail ici TODO
-        pass
+        if not self.mail:
+            raise ValueError("Pour générer et envoyer, utilisez la méthode send_new_mail")
+        self._compile()
+        self._sender(mail=self.mail)

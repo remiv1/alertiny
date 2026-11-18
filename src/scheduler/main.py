@@ -20,6 +20,7 @@ def _reconcile_on_startup() -> bool:
     :returns: Whether reconciliation succeeded.
     :rtype: bool
     """
+    # TODO Implémenter la solution de réconciliation
     raise NotImplementedError("Startup reconciliation is not implemented.")
 
 

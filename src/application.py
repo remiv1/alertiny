@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from typing import Any, AsyncGenerator
 
 from fastapi import Depends, FastAPI
 
@@ -13,7 +14,7 @@ from security import verify_bearer_token
 from api import router as api_router
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):   # pylint: disable=W0613
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, Any]:   # pylint: disable=W0613
     """Gestion du cycle de vie de l'application FastAPI."""
     # Initialisation avant le démarrage de l'application
     yield

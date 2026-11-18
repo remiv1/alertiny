@@ -8,3 +8,11 @@ mail:
     starttls: false
 
   retries: 3
+
+  imap:
+    copy_to_sent: true
+    server: "imap.dom.com"
+    port: 993
+    tls: true
+    starttls: false
+    folder: "/Sent"
