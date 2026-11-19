@@ -11,12 +11,15 @@ from __future__ import annotations
 import os
 import secrets
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 bearer_scheme = HTTPBearer(auto_error=False)
+BEARER_TOKEN_ENV_VAR = "ALERTINY_BEARER_TOKEN"
+REQUIRED_ENVIRONMENT_VARIABLES = (BEARER_TOKEN_ENV_VAR,)
 
 def verify_bearer_token(
+    request: Request,
 	credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> None:
     """Vérifie la validité du jeton bearer dans la requête entrante.
@@ -26,7 +29,10 @@ def verify_bearer_token(
 
     :raises HTTPException: Si le jeton bearer est invalide ou manquant.
     """
-    expected_token = os.getenv("ALERTINY_BEARER_TOKEN")
+    if request.url.path == "/health":
+        return
+
+    expected_token = os.getenv(BEARER_TOKEN_ENV_VAR)
     if not expected_token:
         raise HTTPException(status_code=503, detail="Le jeton d'API n'est pas configuré")
     if (

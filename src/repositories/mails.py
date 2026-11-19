@@ -13,12 +13,20 @@ from imaplib import IMAP4, Time2Internaldate
 import time
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from jinja2 import Template
+from jinja2.exceptions import TemplateError
 
 from params.application import SessionDep
 from params.mails import MailConfig, load_mail_config
 from models.db.mails import Mail
 from models.pydantics.mails import MailIncoming, JinjaValues
+
+from ..exc.mails import (
+    MailDatabaseException,
+    MailCompileException,
+    MailSendException,
+)
 
 class MailClient:
     """Client pour l'envoi des mails."""
@@ -72,7 +80,12 @@ class MailClient:
         if self.email_message is None:
             raise ValueError("Email message has not been created.")
         try:
-            self.imap.append("Sent", "", Time2Internaldate(time.time()), self.email_message.as_bytes())
+            self.imap.append(
+                "Sent",
+                "",
+                Time2Internaldate(time.time()),
+                self.email_message.as_bytes()
+            )
             return True
         except IMAP4.error:
             return False
@@ -111,16 +124,24 @@ class MailsRepository:
         """Compile le contenu du mail actuel."""
         if not self.mail:
             raise ValueError("No mail is currently set for compilation.")
-        template = Template(self.mail.template)
-        return template.render(
-            **{j.key: j.value for j in cast(list[JinjaValues], self.mail.jinja_values)}
-        )
+        try:
+            template = Template(self.mail.template)
+            compiled_mail = template.render(
+                **{j.key: j.value for j in cast(list[JinjaValues], self.mail.jinja_values)}
+            )
+            return compiled_mail
+        except TemplateError as e:
+            raise MailCompileException("Error occurred while compiling mail") from e
 
     def get_mails(self) -> Optional[Sequence[Mail]]:
         """Récupère la liste des mails."""
         stmt = select(Mail)
-        result = self.session.execute(stmt)
-        return result.scalars().one_or_none()
+        try:
+            mails = self.session.execute(stmt)
+            result = mails.scalar_one_or_none()
+        except SQLAlchemyError as e:
+            raise MailDatabaseException("Error occurred while fetching mails") from e
+        return result
 
     @overload
     def get_mail_by_id(self, mail_id: str, chaine:Literal[True]) -> "MailsRepository": ...
@@ -158,6 +179,7 @@ class MailsRepository:
 
     def send_new_mail(self, *, mail: MailIncoming) -> Mail:
         """Crée un nouveau mail."""
+        # TODO gérer les exceptions et retourner un message personnalisé.
         mail = Mail.from_incoming(mail)
         self.session.add(mail)
         self.session.commit()
@@ -168,13 +190,18 @@ class MailsRepository:
         """Génère un mail et l'ajoute à la base de données et retourne le contenu généré."""
         mail_instance = Mail.from_incoming(mail)
         self.session.add(mail_instance)
-        self.session.commit()
+        try:
+            self.session.commit()
+        except SQLAlchemyError as e:
+            raise MailDatabaseException(
+                "Error occurred while sending mail params in database"
+            ) from e
         self.mail = mail_instance
         return self._compile()
 
     def send_mail(self) -> None:
         """Envoie un mail."""
         if not self.mail:
-            raise ValueError("Pour générer et envoyer, utilisez la méthode send_new_mail")
+            raise MailSendException("Pour générer et envoyer, utilisez la méthode send_new_mail")
         self._compile()
         self._sender(mail=self.mail)

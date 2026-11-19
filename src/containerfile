@@ -20,7 +20,7 @@ ENV UVICORN_HOST="0.0.0.0" \
     UVICORN_PORT="8465" \
     UVICORN_WORKERS="2" \
     UVICORN_LOG_LEVEL="info" \
-    UVICORN_ACCESS_LOG="false"
+    UVICORN_ACCESS_LOG="true"
 
 COPY ./src/requirements.txt /tmp/
 RUN pip install --upgrade pip \

@@ -1,4 +1,7 @@
-"""Module v1 de l'API Alertiny.
+"""Module api de l'API Alertiny.
+Version 1 lancée initialement au 19/11/2026 avec des alertes mail uniquement.
+
+.. prefixe:: `/api`
 
 .. module_author:: Rémi Verschuur <rverschuur@audit-io.fr>
 .. version:: 1.0.0
