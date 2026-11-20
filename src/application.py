@@ -1,5 +1,16 @@
 """Module principal de l'application Alertiny.
 
+.. prefix:: `/`
+
+.. routes::
+    - `/health`: Vérifie l'état de santé de l'application et retourne un diagnostique complet
+    reprenant l'état de santé de la base de données ainsi que l'état de santé de l'application
+    y compris les variables d'environnement et la complexité des mots-de-passe.
+
+.. fonctions::
+    - `get_app`: Crée et retourne l'instance de l'application FastAPI.
+    - `lifespan`: Gestion du cycle de vie de l'application FastAPI.
+
 .. module_author:: Rémi Verschuur <rverschuur@audit-io.fr>
 .. version:: 1.0.0
 """
@@ -23,14 +34,27 @@ from params.application import SessionDep
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, Any]:   # pylint: disable=W0613
-    """Gestion du cycle de vie de l'application FastAPI."""
+    """Gestion du cycle de vie de l'application FastAPI.
+
+    Cette fonction est utilisée pour initialiser et nettoyer les ressources
+    avant le démarrage et après l'arrêt de l'application.
+
+    :param app: Instance de l'application FastAPI.
+    :type app: fastapi.FastAPI
+
+    :rtype: AsyncGenerator[None, Any]
+    """
     # Initialisation avant le démarrage de l'application
     yield
     # Nettoyage après l'arrêt de l'application
 
 
 def get_app() -> FastAPI:
-    """Retourne l'instance de l'application FastAPI."""
+    """Retourne l'instance de l'application FastAPI et sa route `/health`.
+    
+    :return: Instance de l'application FastAPI.
+    :rtype: fastapi.FastAPI
+    """
 
     app = FastAPI(
         title="Alertiny API",
@@ -41,7 +65,14 @@ def get_app() -> FastAPI:
 
     @app.get("/health")
     def health(session: SessionDep) -> dict[str, Any]:
-        """Vérifie l'état de santé de l'application."""
+        """Vérifie l'état de santé de l'application.
+        
+        :param session: Session de base de données.
+        :type session: SessionDep
+
+        :return: Diagnostic de l'état de santé de l'application.
+        :rtype: dict[str, Any]
+        """
         missing_environment_variables = [
             name for name in REQUIRED_ENVIRONMENT_VARIABLES if not os.getenv(name)
         ]

@@ -1,5 +1,10 @@
 """Scheduler entry point for TTL-LAMa.
 
+.. fonctions::
+    - `_reconcile_on_startup`: Relance la réconciliation au démarrage et déclenche les actions
+    de panique configurées en cas d'échec.
+    - `main`: Point d'entrée principal pour le planificateur TTL-LAMa.
+
 .. module_author:: Rémi Verschuur <rverschuur@audit-io.fr>
 .. version:: 1.0.0
 """

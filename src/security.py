@@ -23,7 +23,9 @@ def verify_bearer_token(
 	credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> None:
     """Vérifie la validité du jeton bearer dans la requête entrante.
-    
+
+    :param request: La requête HTTP lancée à l'API.
+    :type request: fastapi.Request
     :param credentials: Les informations d'autorisation HTTP extraites de la requête.
     :type credentials: HTTPAuthorizationCredentials | None
 

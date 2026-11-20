@@ -1,5 +1,9 @@
 """Module de gestion des mails dans le dépôt Alertiny.
 
+.. classes::
+    - `MailClient` : Client pour l'envoi des mails.
+    - `MailsRepository` : Dépôt pour la gestion des mails.
+
 .. module_author:: Rémi Verschuur <rverschuur@audit-io.fr>
 .. version:: 1.0.0
 """
@@ -29,15 +33,33 @@ from ..exc.mails import (
 )
 
 class MailClient:
-    """Client pour l'envoi des mails."""
+    """Client pour la préparation des objets mails, leur envoi et la copie dans les éléments
+    envoyés avec les librairies smtp et imap.
+    
+    :param mail: Objet Mail contenant les informations du mail à envoyer.
+    :type mail: alertiny.models.db.mails.Mail
+    :param config: Configuration du client mail.
+    :type config: alertiny.params.mails.MailConfig
 
-    def __init__(self, mail: Mail, config: MailConfig) -> None:
+    .. attributs::
+        - `config` (MailConfig): Configuration du client mail.
+        - `mail` (Mail): Objet Mail contenant les informations du mail à envoyer.
+        - `email_message` (Message | None): Objet Message représentant le mail à envoyer.
+        - `smtp` (SMTP | None): Client SMTP pour l'envoi des mails.
+        - `imap` (IMAP4 | None): Client IMAP pour la gestion des éléments envoyés.
+        - `timeout` (float): Délai d'attente pour les connexions SMTP.
+    """
+
+    def __init__(self, mail: Mail, config: Optional[MailConfig]) -> None:
+        if config is None:
+            self.config = load_mail_config()
+        else:
+            self.config = config
         self.mail: Mail = mail
-        self.config = config
         self.email_message: Message | None = None
         self.smtp: SMTP | None = None
         self.imap: IMAP4 | None = None
-        self.timeout: float = 0.0
+        self.timeout: float = 30.0
 
     def _create_mail(self) -> "MailClient":
         self.email_message = Message()
