@@ -1,5 +1,9 @@
 """Initialisation du module de modélisation des données liées aux mails et aux statuts.
 
+.. classes::
+    - `Mail`: Modèle pour les mails.
+    - `Status`: Modèle pour les statuts.
+
 .. module_author:: Rémi Verschuur rverschuur@audit-io.fr
 .. version:: 1.0.0
 """

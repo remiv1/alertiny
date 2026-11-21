@@ -1,5 +1,10 @@
 """Modèles Pydantic pour les mails.
 
+.. classes::
+    - `Recipient`: Modèle pour les destinataires.
+    - `JinjaValues`: Modèle pour les valeurs Jinja.
+    - `MailIncoming`: Modèle pour les mails entrants.
+
 .. module_author:: Rémi Verschuur <rverschuur@audit-io.fr>
 .. version:: 1.0.0
 """

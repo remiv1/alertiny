@@ -21,7 +21,7 @@ def get_session() -> Generator[Session, None, None]:
     """Obtient une session locale pour interagir avec la base de données.
 
     :return: Session locale SQLAlchemy.
-    :rtype: Session
+    :rtype: Generator[sqlalchemy.orm.Session, None, None]
     """
     with session() as s:
         yield s

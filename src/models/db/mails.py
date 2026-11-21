@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import String, DateTime, text
 from sqlalchemy.orm import mapped_column, Mapped, relationship
 
-from ._common import Mixins
+from models.db._common import Mixins
 from ..pydantics.mails import MailIncoming
 
 if TYPE_CHECKING:
@@ -38,6 +38,13 @@ class Mail(Mixins):
     :type sent_at: datetime
     :param statuses: Liste des statuts associés au mail.
     :type statuses: list[Status]
+
+    .. notes::
+        - Les destinataires ne sont conservés que temporairement pour les besoins de retry.
+        - Les informations sensibles sont traitées conformément aux exigences RGPD.
+
+    .. methods::
+        - `from_incoming`: Crée une instance de Mail à partir d'un MailIncoming.
     """
     __tablename__ = "mails"
 
@@ -99,7 +106,14 @@ class Mail(Mixins):
 
     @classmethod
     def from_incoming(cls, mail: MailIncoming) -> Mail:
-        """Crée une instance de Mail à partir d'un MailIncoming."""
+        """Crée une instance de Mail à partir d'un MailIncoming.
+
+        :param mail: Instance de MailIncoming à partir de laquelle créer le Mail.
+        :type mail: MailIncoming
+
+        :return: Instance de Mail créée à partir du MailIncoming.
+        :rtype: Mail
+        """
         return cls(
             sender=mail.sender,
             recipients=",".join([r.email for r in mail.recipient]),

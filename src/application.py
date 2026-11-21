@@ -42,6 +42,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, Any]:   # pylint: disab
     :param app: Instance de l'application FastAPI.
     :type app: fastapi.FastAPI
 
+    :return: Générateur asynchrone pour la gestion du cycle de vie.
     :rtype: AsyncGenerator[None, Any]
     """
     # Initialisation avant le démarrage de l'application
