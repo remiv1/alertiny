@@ -1,5 +1,10 @@
 """Paramètres de configuration de l'application Alertiny.
 
+.. classes::
+    - `SessionDep` : Dépendance FastAPI pour obtenir une session SQLAlchemy.
+
+.. responsabilité : configuration
+
 .. module_author:: Rémi Verschuur <rverschuur@audit-io.fr>
 .. version:: 1.0.0
 """

@@ -1,5 +1,8 @@
 """Module commun de la modélisation des données
 
+.. classes::
+    - `Mixins`: Classe de mixin commune pour les modèles de la base de données.
+
 .. module_author:: Rémi Verschuur rverschuur@audit-io.fr
 .. version:: 1.0.0
 """
@@ -13,7 +16,17 @@ from sqlalchemy import DateTime, text
 Base = declarative_base()
 
 class Mixins(Base):
-    """Classe de mixin commune pour les modèles de la base de données."""
+    """Classe de mixin commune pour les modèles de la base de données.
+
+    :param created_at: Date et heure de création de l'enregistrement.
+    :type created_at: datetime
+    :param updated_at: Date et heure de la dernière mise à jour de l'enregistrement.
+    :type updated_at: datetime
+
+    .. methods::
+        - `to_dict`: Convertit l'objet en dictionnaire.
+        - `from_dict`: Met à jour l'objet à partir d'un dictionnaire.
+    """
 
     __abstract__ = True
     created_at: Mapped[datetime] = mapped_column(

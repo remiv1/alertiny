@@ -1,12 +1,9 @@
 """Module de gestion des templates dans l'application Alertiny.
 
-.. classes::
-    - `Variable`: Représente une variable dans un template.
-    - `Template`: Représente un template dans l'application.
-    - `TemplatesConfig`: Représente la configuration des templates dans l'application.
-
 .. functions::
     - `load_templates_config`: Charge la configuration des templates depuis le fichier YAML.
+
+.. responsibility : configuration
 
 .. module_author:: Rémi Verschuur <rverschuur@audit-io.fr>
 .. version:: 1.0.0

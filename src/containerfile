@@ -20,7 +20,9 @@ ENV UVICORN_HOST="0.0.0.0" \
     UVICORN_PORT="8465" \
     UVICORN_WORKERS="2" \
     UVICORN_LOG_LEVEL="info" \
-    UVICORN_ACCESS_LOG="true"
+    UVICORN_ACCESS_LOG="true" \
+    SCHEDULER_HOST="127.0.0.1" \
+    SCHEDULER_PORT="1111"
 
 COPY ./src/requirements.txt /tmp/
 RUN pip install --upgrade pip \
