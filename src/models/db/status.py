@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from enum import Enum
 from datetime import datetime
+import uuid
 
 from sqlalchemy import String, DateTime, CheckConstraint, ForeignKey, func
 from sqlalchemy.orm import mapped_column, Mapped, relationship
@@ -18,7 +19,12 @@ if TYPE_CHECKING:
     from .mails import Mail
 
 class MailStatus(Enum):
-    """Enum représentant les différents statuts possibles d'un mail."""
+    """Valeurs autorisées pour l'historique de statut d'une notification.
+
+    ``PENDING`` représente une livraison à effectuer ou à retenter, ``SENT`` indique que
+    SMTP a accepté le mail, ``FAILED`` indique que le budget de retries est épuisé et
+    ``UNKNOWN`` est réservé aux données dont l'état ne peut pas être déterminé.
+    """
     PENDING = "pending"
     SENT = "sent"
     FAILED = "failed"
@@ -26,7 +32,11 @@ class MailStatus(Enum):
 
     @classmethod
     def as_sql_values(cls) -> str:
-        """Retourne les valeurs SQL de l'énumération."""
+        """Formate les valeurs pour la contrainte SQL ``CHECK`` du modèle.
+
+        :returns: Liste séparée par des virgules des valeurs entre apostrophes.
+        :rtype: str
+        """
         return ', '.join(f"'{st.value}'" for st in cls)
 
 class Status(Mixins):
@@ -34,8 +44,21 @@ class Status(Mixins):
 
     :param id: Identifiant UUID du statut.
     :type id: str
-    :param name: Nom du statut.
-    :type name: str
+    :param mail_id: Identifiant du mail associé à cet événement.
+    :type mail_id: str
+    :param status: Valeur choisie parmi :class:`MailStatus`.
+    :type status: str
+    :param comment: Détail facultatif d'un échec ou d'une reprise.
+    :type comment: str | None
+    :param created_at: Horodatage de création de l'événement.
+    :type created_at: datetime
+    :param mail: Mail parent de la relation ORM.
+    :type mail: models.db.mails.Mail
+
+    Chaque changement notable est ajouté à l'historique plutôt que de remplacer les
+    événements précédents. La dernière valeur courante est également stockée dans
+    ``Mail.current_status`` pour permettre au worker de sélectionner efficacement les
+    éléments de la file.
     """
     __tablename__ = "status"
     __table_args__ = (
@@ -47,6 +70,7 @@ class Status(Mixins):
     id: Mapped[str] = mapped_column(
         String(36),
         primary_key=True,
+        default=lambda: str(uuid.uuid4()),
         comment="Identifiant unique du statut",
     )
     mail_id: Mapped[str] = mapped_column(

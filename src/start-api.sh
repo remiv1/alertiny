@@ -3,10 +3,9 @@ set -eu
 
 python - <<'PY'
 import models.db
-from models.db._common import Base
-from params.database import engine
+from params.database import initialize_database
 
-Base.metadata.create_all(bind=engine, checkfirst=True)
+initialize_database()
 PY
 
 exec uvicorn application:get_app --factory

@@ -11,6 +11,11 @@
     - `get_app`: Crée et retourne l'instance de l'application FastAPI.
     - `lifespan`: Gestion du cycle de vie de l'application FastAPI.
 
+Au démarrage, le contexte de cycle de vie initialise ou met à niveau le schéma SQLite et
+valide la configuration SMTP/IMAP avant que l'application accepte des requêtes. Les routes
+de l'API sont montées sous ``/api/v1`` et protégées par la dépendance Bearer; ``/health``
+reste accessible sans authentification pour les sondes d'orchestration.
+
 .. module_author:: Rémi Verschuur <rverschuur@audit-io.fr>
 .. version:: 1.0.0
 """
@@ -31,28 +36,40 @@ from security import (
 )
 from api import router as api_router
 from params.application import SessionDep
+from params.database import initialize_database
+from params.mails import load_mail_config
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, Any]:   # pylint: disable=W0613
     """Gestion du cycle de vie de l'application FastAPI.
 
-    Cette fonction est utilisée pour initialiser et nettoyer les ressources
-    avant le démarrage et après l'arrêt de l'application.
+    Avant d'accepter des requêtes, initialise la base et charge la configuration mail
+    afin de détecter les paramètres invalides au démarrage. Le bloc après ``yield`` est
+    réservé au nettoyage des ressources lorsque l'application s'arrête.
 
     :param app: Instance de l'application FastAPI.
     :type app: fastapi.FastAPI
 
-    :rtype: AsyncGenerator[None, Any]
+    :yields: Contrôle à l'application pendant sa période d'activité.
+    :yieldtype: None
+    :raises sqlalchemy.exc.SQLAlchemyError: Si l'initialisation du schéma échoue.
+    :raises OSError: Si un fichier de configuration ne peut pas être lu.
+    :raises ValueError: Si la configuration SMTP/IMAP est invalide.
     """
-    # Initialisation avant le démarrage de l'application
+    initialize_database()
+    load_mail_config()
     yield
     # Nettoyage après l'arrêt de l'application
 
 
 def get_app() -> FastAPI:
-    """Retourne l'instance de l'application FastAPI et sa route `/health`.
-    
-    :return: Instance de l'application FastAPI.
+    """Construit l'application FastAPI et monte les routes publiques et métier.
+
+    Toutes les routes de l'API sont protégées par :func:`security.verify_bearer_token`;
+    la route ``/health`` est explicitement exemptée dans cette dépendance pour permettre
+    les sondes sans secret.
+
+    :returns: Application FastAPI configurée avec son contexte de cycle de vie.
     :rtype: fastapi.FastAPI
     """
 
@@ -65,13 +82,18 @@ def get_app() -> FastAPI:
 
     @app.get("/health")
     def health(session: SessionDep) -> dict[str, Any]:
-        """Vérifie l'état de santé de l'application.
-        
-        :param session: Session de base de données.
-        :type session: SessionDep
+        """Retourne un diagnostic synthétique de l'API, de la base et de l'environnement.
 
-        :return: Diagnostic de l'état de santé de l'application.
-        :rtype: dict[str, Any]
+        Le diagnostic vérifie l'accès à la base avec une requête ``SELECT 1``, indique
+        les variables d'environnement requises absentes et ajoute un avertissement si
+        le jeton Bearer semble trop faible.
+
+        :param session: Session de base de données fournie par la dépendance FastAPI.
+        :type session: params.application.SessionDep
+        :returns: Dictionnaire comprenant les clés ``API``, ``DATABASE`` et
+            ``ENVIRONMENT``; la valeur de ``ENVIRONMENT`` inclut les variables manquantes
+            et avertissements éventuels.
+        :rtype: dict[str, typing.Any]
         """
         missing_environment_variables = [
             name for name in REQUIRED_ENVIRONMENT_VARIABLES if not os.getenv(name)

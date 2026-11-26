@@ -15,4 +15,4 @@ mail:
     port: 993
     tls: true
     starttls: false
-    folder: "/Sent"
+    folder: "Sent"
