@@ -164,7 +164,18 @@ class Mail(Mixins):
 
     @classmethod
     def from_incoming(cls, mail: MailIncoming) -> Mail:
-        """Crée une instance de Mail à partir d'un MailIncoming."""
+        """Construit un modèle ORM à partir d'une requête Pydantic.
+
+        Cette conversion conserve les champs nécessaires au traitement et initialise
+        les marqueurs de pièces jointes à ``False`` conformément au périmètre de la V1.
+        Les identifiants sont attribués par les valeurs par défaut SQLAlchemy lors de
+        l'insertion.
+
+        :param mail: Données entrantes validées par Pydantic.
+        :type mail: models.pydantics.mails.MailIncoming
+        :returns: Nouvelle instance non persistée du modèle :class:`Mail`.
+        :rtype: Mail
+        """
         return cls(
             sender=mail.sender,
             recipients=",".join([r.email for r in mail.recipient]),
