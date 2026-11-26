@@ -16,8 +16,6 @@ doit exécuter un scheduler par base de données SQLite partagée.
 """
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
-from datetime import datetime, timezone
 import logging
 from datetime import timezone
 
@@ -77,7 +75,7 @@ def main() -> None:
     """
     _reconcile_on_startup()
     scheduler = BlockingScheduler(timezone=timezone.utc)
-    scheduler.add_job(
+    scheduler.add_job(  # pyright: ignore[reportUnknownMemberType]
         _process_due_mails,
         trigger="interval",
         seconds=1,
@@ -85,7 +83,7 @@ def main() -> None:
         max_instances=1,
         coalesce=True,
     )
-    scheduler.start()
+    scheduler.start()  # pyright: ignore[reportUnknownMemberType]
 
 
 if __name__ == "__main__":

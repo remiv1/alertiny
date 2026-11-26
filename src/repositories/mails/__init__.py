@@ -9,8 +9,7 @@
 """
 from __future__ import annotations
 
-from .client import MailClient
-from .repo import MailsRepository
+from .repo import MailClient, MailsRepository
 
 __all__ = [
     "MailClient",

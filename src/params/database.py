@@ -51,8 +51,7 @@ def initialize_database() -> None:
     :raises sqlalchemy.exc.SQLAlchemyError: Si la création des tables, l'inspection ou
         une migration SQL échoue.
     """
-    from models.db import Mail, Status  # noqa: F401
-    from models.db._common import Base
+    from models.db._common import Base # pylint: disable=C0415
 
     Base.metadata.create_all(bind=engine, checkfirst=True)
     existing_columns = {

@@ -19,19 +19,21 @@ from dataclasses import replace
 from email.message import EmailMessage
 
 import pytest
+from fastapi.routing import APIRoute
 from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from api.v1.mails import _queue, router
+from api.v1.mails import _queue, router # type: ignore
 from exc.mails import MailCompileException, MailSendException
 from models.db._common import Base
 from models.db.mails import Mail
 from models.pydantics.mails import JinjaValues, MailIncoming, Recipient
 from params.mails import IMAPConfig, MailConfig, SMTPConfig
 from repositories import mails as mails_repository
-from repositories.mails import MailClient, MailsRepository
+from repositories.mails import MailClient, MailsRepository, repo as mails_repo
+from repositories.mails.client import MailClient as DirectMailClient
 
 
 @pytest.fixture
@@ -48,7 +50,7 @@ def database_session() -> Iterator[Session]:
     )
     Base.metadata.create_all(engine)
     test_session = sessionmaker(bind=engine, expire_on_commit=False)
-    with test_session() as database_session:
+    with test_session() as database_session: # pylint: disable=W0621
         yield database_session
     engine.dispose()
 
@@ -87,9 +89,19 @@ def incoming_mail() -> MailIncoming:
     )
 
 
+def successful_copy(_client: MailClient, _message: EmailMessage) -> bool:
+    """Simule une copie IMAP réussie."""
+    return True
+
+
+def successful_send(_client: MailClient, _message: EmailMessage) -> set[str]:
+    """Simule un envoi SMTP réussi."""
+    return set()
+
+
 def test_queue_renders_and_persists_mail_without_exposing_payload(
-    database_session: Session,
-    mail_config: MailConfig,
+    database_session: Session, # pylint: disable=W0621
+    mail_config: MailConfig, # pylint: disable=W0621
 ) -> None:
     """Vérifie le rendu configuré, la persistance et l'absence de fuite de données.
 
@@ -115,8 +127,8 @@ def test_queue_renders_and_persists_mail_without_exposing_payload(
 
 
 def test_imap_failure_does_not_retry_successful_smtp_or_retain_recipients(
-    database_session: Session,
-    mail_config: MailConfig,
+    database_session: Session, # pylint: disable=W0621
+    mail_config: MailConfig, # pylint: disable=W0621
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Vérifie qu'un échec IMAP après SMTP ne déclenche pas un second envoi.
@@ -134,7 +146,7 @@ def test_imap_failure_does_not_retry_successful_smtp_or_retain_recipients(
     mail = repository.queue_mail(incoming_mail())
     smtp_calls = 0
 
-    def send(self: object, message: EmailMessage) -> set[str]:
+    def send(self: object, message: EmailMessage) -> set[str]: # pylint: disable=W0621, W0613
         nonlocal smtp_calls
         smtp_calls += 1
         return set()
@@ -158,8 +170,8 @@ def test_imap_failure_does_not_retry_successful_smtp_or_retain_recipients(
 
 
 def test_smtp_failure_retries_then_clears_recipients_on_success(
-    database_session: Session,
-    mail_config: MailConfig,
+    database_session: Session, # pylint: disable=W0621
+    mail_config: MailConfig, # pylint: disable=W0621
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Vérifie la planification d'un retry SMTP puis l'effacement des destinataires.
@@ -177,7 +189,7 @@ def test_smtp_failure_retries_then_clears_recipients_on_success(
     mail = repository.queue_mail(incoming_mail())
     smtp_calls = 0
 
-    def fail_once(self: object, message: EmailMessage) -> set[str]:
+    def fail_once(self: object, message: EmailMessage) -> set[str]: # pylint: disable=W0621, W0613
         nonlocal smtp_calls
         smtp_calls += 1
         if smtp_calls == 1:
@@ -185,7 +197,7 @@ def test_smtp_failure_retries_then_clears_recipients_on_success(
         return set()
 
     monkeypatch.setattr(mails_repository.MailClient, "send", fail_once)
-    monkeypatch.setattr(mails_repository.MailClient, "copy_to_sent", lambda self, message: None)
+    monkeypatch.setattr(mails_repository.MailClient, "copy_to_sent", successful_copy)
 
     retry = repository.process_mail(mail.id)
     assert retry.current_status == "pending"
@@ -201,8 +213,8 @@ def test_smtp_failure_retries_then_clears_recipients_on_success(
 
 
 def test_partial_smtp_acceptance_retries_only_refused_recipients(
-    database_session: Session,
-    mail_config: MailConfig,
+    database_session: Session, # pylint: disable=W0621
+    mail_config: MailConfig, # pylint: disable=W0621
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Vérifie que seuls les destinataires refusés sont réessayés.
@@ -229,7 +241,7 @@ def test_partial_smtp_acceptance_retries_only_refused_recipients(
         return set()
 
     monkeypatch.setattr(mails_repository.MailClient, "send", refuse_one_once)
-    monkeypatch.setattr(mails_repository.MailClient, "copy_to_sent", lambda self, message: None)
+    monkeypatch.setattr(mails_repository.MailClient, "copy_to_sent", successful_copy)
 
     retry = repository.process_mail(mail.id)
     assert retry.current_status == "pending"
@@ -247,8 +259,8 @@ def test_partial_smtp_acceptance_retries_only_refused_recipients(
 
 
 def test_terminal_failure_retains_recipients_until_successful_retry(
-    database_session: Session,
-    mail_config: MailConfig,
+    database_session: Session, # pylint: disable=W0621
+    mail_config: MailConfig, # pylint: disable=W0621
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Vérifie la conservation des destinataires d'un échec jusqu'à une livraison.
@@ -280,8 +292,8 @@ def test_terminal_failure_retains_recipients_until_successful_retry(
     assert requeued.retry_count == 0
     assert requeued.recipients == "ops@example.com"
 
-    monkeypatch.setattr(mails_repository.MailClient, "send", lambda self, message: set())
-    monkeypatch.setattr(mails_repository.MailClient, "copy_to_sent", lambda self, message: None)
+    monkeypatch.setattr(mails_repository.MailClient, "send", successful_send)
+    monkeypatch.setattr(mails_repository.MailClient, "copy_to_sent", successful_copy)
     sent = repository.process_mail(mail.id)
 
     assert sent.current_status == "sent"
@@ -290,8 +302,8 @@ def test_terminal_failure_retains_recipients_until_successful_retry(
 
 
 def test_reconcile_requeues_interrupted_delivery_with_warning(
-    database_session: Session,
-    mail_config: MailConfig,
+    database_session: Session, # pylint: disable=W0621
+    mail_config: MailConfig, # pylint: disable=W0621
 ) -> None:
     """Vérifie la remise en file des messages laissés en état ``sending``.
 
@@ -316,7 +328,7 @@ def test_reconcile_requeues_interrupted_delivery_with_warning(
 
 
 def test_mail_client_sends_mime_message_and_copies_it_to_imap(
-    mail_config: MailConfig,
+    mail_config: MailConfig, # pylint: disable=W0621
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Vérifie la création du message MIME et l'ajout du message au dossier IMAP.
@@ -339,6 +351,7 @@ def test_mail_client_sends_mime_message_and_copies_it_to_imap(
         provider_id="<mail-1@example.com>",
     )
     client = MailClient(mail, mail_config)
+    assert DirectMailClient is MailClient
     message = client.create_message()
     smtp_calls: list[tuple[str, list[str], str]] = []
     imap_calls: list[tuple[str, str, bytes]] = []
@@ -354,9 +367,9 @@ def test_mail_client_sends_mime_message_and_copies_it_to_imap(
             :param kwargs: Options SMTP ignorées par le faux client.
             :type kwargs: object
             """
-            pass
+            pass # pylint: disable=W0107
 
-        def __enter__(self) -> FakeSMTP:
+        def __enter__(self) -> 'FakeSMTP':
             """Retourne l'instance lors de l'entrée dans le gestionnaire de contexte.
 
             :returns: Cette instance.
@@ -382,7 +395,7 @@ def test_mail_client_sends_mime_message_and_copies_it_to_imap(
             :returns: ``None``.
             :rtype: None
             """
-            pass
+            pass # pylint: disable=W0107
 
         def ehlo(self) -> None:
             """Simule la commande EHLO SMTP.
@@ -390,7 +403,7 @@ def test_mail_client_sends_mime_message_and_copies_it_to_imap(
             :returns: ``None``.
             :rtype: None
             """
-            pass
+            pass # pylint: disable=W0107
 
         def send_message(
             self,
@@ -424,13 +437,13 @@ def test_mail_client_sends_mime_message_and_copies_it_to_imap(
             :param kwargs: Options IMAP ignorées par le faux client.
             :type kwargs: object
             """
-            pass
+            pass # pylint: disable=W0107
 
         def append(
             self,
             folder: str,
             flags: str,
-            date_time: str,
+            date_time: str, # pylint: disable=W0621, W0613
             message_bytes: bytes,
         ) -> tuple[str, list[bytes]]:
             """Enregistre l'ajout et simule une réponse IMAP ``OK``.
@@ -457,8 +470,8 @@ def test_mail_client_sends_mime_message_and_copies_it_to_imap(
             """
             return "BYE", [b"logout"]
 
-    monkeypatch.setattr(mails_repository, "SMTP", FakeSMTP)
-    monkeypatch.setattr(mails_repository, "IMAP4_SSL", FakeIMAP)
+    monkeypatch.setattr(mails_repo, "SMTP", FakeSMTP)
+    monkeypatch.setattr(mails_repo, "IMAP4_SSL", FakeIMAP)
 
     assert message["From"] == mail_config.sender
     assert message.get_content_type() == "multipart/alternative"
@@ -504,8 +517,8 @@ def test_mail_input_rejects_invalid_addresses(address: str) -> None:
 
 
 def test_template_values_cannot_inject_email_subject_headers(
-    database_session: Session,
-    mail_config: MailConfig,
+    database_session: Session, # pylint: disable=W0621
+    mail_config: MailConfig, # pylint: disable=W0621
 ) -> None:
     """Vérifie que les retours de ligne ne peuvent pas injecter d'en-tête mail.
 
@@ -524,7 +537,7 @@ def test_template_values_cannot_inject_email_subject_headers(
 
 
 def test_api_accepts_queue_request_and_returns_only_tracking_data(
-    database_session: Session,
+    database_session: Session, # pylint: disable=W0621
 ) -> None:
     """Vérifie le contrat de file et l'absence de données privées dans la réponse.
 
@@ -537,7 +550,10 @@ def test_api_accepts_queue_request_and_returns_only_tracking_data(
     post_route = next(
         route
         for route in router.routes
-        if route.path == "/mails/" and "POST" in route.methods
+        if isinstance(route, APIRoute)
+        and route.path == "/mails/"
+        and route.methods is not None
+        and "POST" in route.methods
     )
     saved_mail = MailsRepository(database_session).get_mail_by_id(queued["id"])
 
@@ -547,4 +563,3 @@ def test_api_accepts_queue_request_and_returns_only_tracking_data(
     assert saved_mail is not None
     assert MailsRepository.public_status(saved_mail)["status"] == "pending"
     assert "recipients" not in MailsRepository.public_status(saved_mail)
-
