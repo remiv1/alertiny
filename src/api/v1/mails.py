@@ -42,6 +42,7 @@ from params.application import SessionDep
 from repositories.mails import MailsRepository
 
 router = APIRouter(prefix="/mails", tags=["api", "v1", "mails"])
+MAIL_NOT_FOUND = "Email not found"
 
 
 def _queue(incoming: MailIncoming, session: SessionDep) -> dict[str, str]:
@@ -60,12 +61,12 @@ def _queue(incoming: MailIncoming, session: SessionDep) -> dict[str, str]:
         mail = MailsRepository(session).queue_mail(incoming)
     except MailCompileException as error:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(error),
         ) from error
     except ValueError as error:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(error),
         ) from error
     except MailDatabaseException as error:
@@ -121,7 +122,7 @@ def get_mail(mail_id: str, session: SessionDep) -> dict[str, str | int | None]:
     if mail is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Email not found",
+            detail=MAIL_NOT_FOUND,
         )
     return repository.public_status(mail)
 
@@ -152,7 +153,7 @@ def retry_mail(
     except MailNotFoundException as error:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Email not found",
+            detail=MAIL_NOT_FOUND,
         ) from error
     except MailRetryNotAllowedException as error:
         raise HTTPException(
@@ -238,7 +239,7 @@ def send_mail_after_creation(
     except MailNotFoundException as error:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Email not found",
+            detail=MAIL_NOT_FOUND,
         ) from error
     except MailDatabaseException as error:
         raise HTTPException(

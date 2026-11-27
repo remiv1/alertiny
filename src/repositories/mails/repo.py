@@ -24,6 +24,7 @@ enregistrée séparément et ne déclenche pas un nouvel envoi SMTP.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from email.message import EmailMessage
 from email.utils import make_msgid
 import logging
 from typing import Sequence, cast
@@ -255,73 +256,92 @@ class MailsRepository:
         if mail.current_status != MailStatus.PENDING.value:
             return mail
 
-        try:
-            claim = cast(CursorResult[tuple[()]], self.session.execute(
-                update(Mail)
-                .where(
-                    Mail.id == mail_id,
-                    Mail.current_status == MailStatus.PENDING.value,
-                )
-                .values(current_status="sending", next_retry_at=None)
-            ))
-            if claim.rowcount != 1:
-                self.session.rollback()
-                refreshed = self.session.get(Mail, mail_id)
-                if refreshed is None:
-                    raise MailNotFoundException(f"Mail {mail_id} was not found")
-                return refreshed
-            self.session.commit()
-            self.session.refresh(mail)
-        except SQLAlchemyError as error:
-            self.session.rollback()
-            raise MailDatabaseException("Could not claim queued email") from error
+        mail, claimed = self._claim_mail(mail)
+        if not claimed:
+            return mail
 
         client = MailClient(mail, self.config)
         message = client.create_message()
         try:
             refused_recipients = client.send(message)
             if refused_recipients:
-                currently_pending = [
-                    value.strip()
-                    for value in mail.recipients.split(",")
-                    if value.strip()
-                ]
-                accepted = [
-                    value for value in currently_pending
-                    if value not in refused_recipients
-                ]
-                delivered = [
-                    value.strip()
-                    for value in mail.delivered_recipients.split(",")
-                    if value.strip()
-                ]
-                mail.delivered_recipients = ",".join(dict.fromkeys([*delivered, *accepted]))
-                mail.recipients = ",".join(
-                    value for value in currently_pending if value in refused_recipients
-                )
+                self._record_refused_recipients(mail, refused_recipients)
                 raise MailSendException(
                     f"SMTP refused {len(refused_recipients)} recipient(s)"
                 )
         except MailSendException as error:
-            mail.retry_count += 1
-            if mail.retry_count <= self.config.retries:
-                mail.current_status = MailStatus.PENDING.value
-                mail.next_retry_at = _utc_now() + timedelta(
-                    seconds=min(3600, 2 ** (mail.retry_count - 1))
-                )
-                status = MailStatus.PENDING.value
-            else:
-                mail.current_status = MailStatus.FAILED.value
-                status = MailStatus.FAILED.value
-            mail.last_error = str(error)[:255]
-            mail.statuses.append(Status(status=status, comment=mail.last_error))
-            try:
-                self.session.commit()
-            except SQLAlchemyError as database_error:
-                self.session.rollback()
-                raise MailDatabaseException("Could not record SMTP failure") from database_error
+            self._record_smtp_failure(mail, error)
             return mail
 
+        self._record_smtp_success(mail)
+        self._copy_to_sent(mail, client, message)
+        return mail
+
+    def _claim_mail(self, mail: Mail) -> tuple[Mail, bool]:
+        try:
+            claim = cast(CursorResult[tuple[()]], self.session.execute(
+                update(Mail)
+                .where(
+                    Mail.id == mail.id,
+                    Mail.current_status == MailStatus.PENDING.value,
+                )
+                .values(current_status="sending", next_retry_at=None)
+            ))
+            if claim.rowcount != 1:
+                mail_id = mail.id
+                self.session.rollback()
+                refreshed = self.session.get(Mail, mail_id)
+                if refreshed is None:
+                    raise MailNotFoundException(f"Mail {mail_id} was not found")
+                return refreshed, False
+            self.session.commit()
+            self.session.refresh(mail)
+        except SQLAlchemyError as error:
+            self.session.rollback()
+            raise MailDatabaseException("Could not claim queued email") from error
+        return mail, True
+
+    @staticmethod
+    def _record_refused_recipients(mail: Mail, refused_recipients: set[str]) -> None:
+        currently_pending = [
+            value.strip()
+            for value in mail.recipients.split(",")
+            if value.strip()
+        ]
+        accepted = [
+            value for value in currently_pending
+            if value not in refused_recipients
+        ]
+        delivered = [
+            value.strip()
+            for value in mail.delivered_recipients.split(",")
+            if value.strip()
+        ]
+        mail.delivered_recipients = ",".join(dict.fromkeys([*delivered, *accepted]))
+        mail.recipients = ",".join(
+            value for value in currently_pending if value in refused_recipients
+        )
+
+    def _record_smtp_failure(self, mail: Mail, error: MailSendException) -> None:
+        mail.retry_count += 1
+        if mail.retry_count <= self.config.retries:
+            mail.current_status = MailStatus.PENDING.value
+            mail.next_retry_at = _utc_now() + timedelta(
+                seconds=min(3600, 2 ** (mail.retry_count - 1))
+            )
+            status = MailStatus.PENDING.value
+        else:
+            mail.current_status = MailStatus.FAILED.value
+            status = MailStatus.FAILED.value
+        mail.last_error = str(error)[:255]
+        mail.statuses.append(Status(status=status, comment=mail.last_error))
+        try:
+            self.session.commit()
+        except SQLAlchemyError as database_error:
+            self.session.rollback()
+            raise MailDatabaseException("Could not record SMTP failure") from database_error
+
+    def _record_smtp_success(self, mail: Mail) -> None:
         mail.current_status = MailStatus.SENT.value
         mail.sent_at = _utc_now()
         mail.recipients = ""
@@ -335,8 +355,11 @@ class MailsRepository:
             self.session.commit()
         except SQLAlchemyError as error:
             self.session.rollback()
-            raise MailDatabaseException("SMTP accepted the message but status was not saved") from error
+            raise MailDatabaseException(
+                "SMTP accepted the message but status was not saved"
+            ) from error
 
+    def _copy_to_sent(self, mail: Mail, client: MailClient, message: EmailMessage) -> None:
         try:
             copied = client.copy_to_sent(message)
         except MailSendException as error:
@@ -351,8 +374,10 @@ class MailsRepository:
                 self.session.commit()
             except SQLAlchemyError as database_error:
                 self.session.rollback()
-                raise MailDatabaseException("Could not record IMAP copy failure") from database_error
-            logger.error("Mail %s was sent but its IMAP copy failed: %s", mail.id, error)
+                raise MailDatabaseException(
+                    "Could not record IMAP copy failure"
+                ) from database_error
+            logger.exception("Mail %s was sent but its IMAP copy failed: %s", mail.id, error)
         else:
             if copied:
                 mail.imap_copied_at = _utc_now()
@@ -361,7 +386,6 @@ class MailsRepository:
             except SQLAlchemyError as error:
                 self.session.rollback()
                 raise MailDatabaseException("Could not record IMAP copy result") from error
-        return mail
 
     def retry_failed_mail(self, mail_id: str) -> Mail:
         """Remet en file un échec terminal pour une nouvelle tentative manuelle.

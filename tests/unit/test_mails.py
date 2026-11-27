@@ -93,7 +93,14 @@ def test_mail_from_incoming_maps_mail_fields(mail_incoming: MailIncoming) -> Non
     ["sender", "template", "jinja_values", "recipient"],
 )
 def test_mail_incoming_requires_fields(
-    missing_field: Literal['sender', 'subject', 'template', 'jinja_values', 'attachments', 'recipient']
+    missing_field: Literal[
+        'sender',
+        'subject',
+        'template',
+        'jinja_values',
+        'attachments',
+        'recipient',
+    ]
 ) -> None:
     """Vérifie que chaque champ paramétré est obligatoire dans une requête.
 

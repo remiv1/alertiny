@@ -12,6 +12,7 @@ WORKDIR /etc/alertiny
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    ca-certificates \
     sqlite3 \
     supervisor \
     && rm -rf /var/lib/apt/lists/*

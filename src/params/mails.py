@@ -33,6 +33,15 @@ CONFIG_PATH = Path("/etc/alertiny/config.yaml")
 LOCAL_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "config.yaml"
 
 
+def _validate_tls_config(protocol: str, tls: bool, starttls: bool) -> None:
+    if (
+        not isinstance(tls, bool) # type: ignore
+        or not isinstance(starttls, bool) # type: ignore
+        or tls == starttls
+    ):
+        raise ValueError(f"{protocol} must enable exactly one of tls or starttls")
+
+
 @dataclass(frozen=True)
 class SMTPConfig:
     """Paramètres nécessaires à la connexion SMTP.
@@ -58,9 +67,12 @@ class SMTPConfig:
     username: str | None = None
     password: str | None = None
 
+    def __post_init__(self) -> None:
+        _validate_tls_config("SMTP", self.tls, self.starttls)
+
 
 @dataclass(frozen=True)
-class IMAPConfig:
+class IMAPConfig:       # pylint: disable=R0902
     """Paramètres de connexion et d'archivage IMAP.
 
     :param copy_to_sent: Doit être vrai en V1 afin d'archiver chaque envoi SMTP réussi.
@@ -89,6 +101,9 @@ class IMAPConfig:
     folder: str
     username: str | None = None
     password: str | None = None
+
+    def __post_init__(self) -> None:
+        _validate_tls_config("IMAP", self.tls, self.starttls)
 
 
 @dataclass(frozen=True)

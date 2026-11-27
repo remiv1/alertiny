@@ -16,7 +16,9 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
+import ssl
 
 import pytest
 from fastapi.routing import APIRoute
@@ -32,7 +34,8 @@ from models.db.mails import Mail
 from models.pydantics.mails import JinjaValues, MailIncoming, Recipient
 from params.mails import IMAPConfig, MailConfig, SMTPConfig
 from repositories import mails as mails_repository
-from repositories.mails import MailClient, MailsRepository, repo as mails_repo
+from repositories.mails import MailClient, MailsRepository, client as mails_client
+from repositories.mails import repo as mails_repo
 from repositories.mails.client import MailClient as DirectMailClient
 
 
@@ -97,6 +100,185 @@ def successful_copy(_client: MailClient, _message: EmailMessage) -> bool:
 def successful_send(_client: MailClient, _message: EmailMessage) -> set[str]:
     """Simule un envoi SMTP réussi."""
     return set()
+
+
+@pytest.mark.parametrize("retry_count,delay", [(0, 1), (1, 2), (2, 4), (12, 3600)])
+def test_smtp_backoff_uses_exponential_delay_with_cap(
+    database_session: Session, # pylint: disable=W0621
+    mail_config: MailConfig, # pylint: disable=W0621
+    monkeypatch: pytest.MonkeyPatch,
+    retry_count: int,
+    delay: int,
+) -> None:
+    """Planifie les tentatives selon le délai exponentiel documenté."""
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    repository = MailsRepository(database_session, replace(mail_config, retries=20))
+    mail = repository.queue_mail(incoming_mail())
+    mail.retry_count = retry_count
+    database_session.commit()
+
+    def fail(_client: MailClient, _message: EmailMessage) -> set[str]:
+        raise MailSendException("SMTP unavailable")
+
+    monkeypatch.setattr(mails_repo, "_utc_now", lambda: now)
+    monkeypatch.setattr(MailClient, "send", fail)
+    result = repository.process_mail(mail.id)
+
+    assert result.current_status == "pending"
+    assert result.retry_count == retry_count + 1
+    assert result.next_retry_at == now + timedelta(seconds=delay)
+    assert result.recipients == "ops@example.com"
+
+
+def test_due_mail_batch_respects_schedule_order_and_limit(
+    database_session: Session, # pylint: disable=W0621
+    mail_config: MailConfig, # pylint: disable=W0621
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Traite les messages échus dans l'ordre et respecte la taille du lot."""
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    repository = MailsRepository(database_session, mail_config)
+    mails = [repository.queue_mail(incoming_mail()) for _ in range(4)]
+    for index, mail in enumerate(mails):
+        mail.created_at = now + timedelta(seconds=index)
+    mails[1].next_retry_at = now + timedelta(seconds=10)
+    mails[2].next_retry_at = now - timedelta(seconds=1)
+    database_session.commit()
+    processed: list[str] = []
+
+    def record(mail_id: str) -> Mail:
+        processed.append(mail_id)
+        return next(mail for mail in mails if mail.id == mail_id)
+
+    monkeypatch.setattr(mails_repo, "_utc_now", lambda: now)
+    monkeypatch.setattr(repository, "process_mail", record)
+
+    assert repository.process_due_mails(limit=2) == 2
+    assert processed == [mails[0].id, mails[2].id]
+
+
+@pytest.mark.parametrize("protocol", ["smtp", "imap"])
+@pytest.mark.parametrize("tls,starttls", [(True, False), (False, True)])
+def test_mail_config_accepts_one_tls_mode(
+    mail_config: MailConfig, # pylint: disable=W0621
+    protocol: str,
+    tls: bool,
+    starttls: bool,
+) -> None:
+    """Accepte un seul mode de transport sécurisé pour chaque protocole."""
+    config = getattr(mail_config, protocol)
+    updated = replace(config, tls=tls, starttls=starttls)
+    assert updated.tls is tls
+    assert updated.starttls is starttls
+
+
+@pytest.mark.parametrize("protocol", ["smtp", "imap"])
+@pytest.mark.parametrize(
+    "tls,starttls", [(False, False), (True, True), ("false", False), (False, 1)],
+)
+def test_mail_config_rejects_invalid_tls_modes(
+    mail_config: MailConfig, # pylint: disable=W0621
+    protocol: str,
+    tls: object,
+    starttls: object,
+) -> None:
+    """Refuse les modes non chiffrés, ambigus ou non booléens."""
+    config = getattr(mail_config, protocol)
+    with pytest.raises(ValueError, match="exactly one of tls or starttls"):
+        replace(config, tls=tls, starttls=starttls)
+
+
+@pytest.mark.parametrize("protocol", ["smtp", "imap"])
+@pytest.mark.parametrize("implicit_tls", [True, False])
+@pytest.mark.parametrize("certificate_failure", [True, False])
+def test_transport_validates_certificates_before_delivery( #pylint: disable=R0914
+    mail_config: MailConfig, # pylint: disable=W0621
+    monkeypatch: pytest.MonkeyPatch,
+    protocol: str,
+    implicit_tls: bool,
+    certificate_failure: bool,
+) -> None:
+    """Vérifie le contexte TLS et interdit la livraison après un échec de certificat."""
+    contexts: list[ssl.SSLContext] = []
+    operations: list[str] = []
+
+    def negotiate(context: ssl.SSLContext) -> None:
+        contexts.append(context)
+        if certificate_failure:
+            raise ssl.SSLCertVerificationError("certificate rejected")
+
+    class FakeTransport:
+        """Transport IMAP/SMTP factice pour les tests."""
+        def __enter__(self) -> 'FakeTransport':
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def starttls(self, **kwargs: ssl.SSLContext) -> None:
+            """Négocie STARTTLS avec le contexte fourni."""
+            negotiate(kwargs.get("context") or kwargs["ssl_context"])
+
+        def ehlo(self) -> None:
+            """Envoie la commande EHLO au serveur."""
+            return None
+
+        def login(self, *_args: object) -> None: # pylint: disable=W0613
+            """Effectue l'authentification avec le serveur."""
+            operations.append("login")
+
+        def send_message(self, *_args: object, **_kwargs: object) -> dict[str, object]: # pylint: disable=W0613
+            """Envoie le message via le serveur SMTP."""
+            operations.append("send")
+            return {}
+
+        def append(self, *_args: object) -> tuple[str, list[bytes]]: # pylint: disable=W0613
+            """Ajoute le message au dossier IMAP spécifié."""
+            operations.append("append")
+            return "OK", []
+
+        def logout(self) -> None:
+            """Se déconnecte du serveur IMAP/SMTP."""
+            return None
+
+    def connect(*_args: object, **kwargs: object) -> FakeTransport: # pylint: disable=W0613
+        context = kwargs.get("context") or kwargs.get("ssl_context")
+        if isinstance(context, ssl.SSLContext):
+            negotiate(context)
+        return FakeTransport()
+
+    monkeypatch.setattr(connect, "error", mails_client.IMAP4.error, raising=False)
+    monkeypatch.setattr(mails_client, "SMTP_SSL", connect)
+    monkeypatch.setattr(mails_client, "SMTP", connect)
+    monkeypatch.setattr(mails_client, "IMAP4_SSL", connect)
+    monkeypatch.setattr(mails_client, "IMAP4", connect)
+    transport_config = replace(
+        getattr(mail_config, protocol),
+        tls=implicit_tls,
+        starttls=not implicit_tls,
+        username="user",
+        password="password",
+    )
+    config = replace(mail_config, **{protocol: transport_config})
+    mail = Mail(recipients="ops@example.com")
+    client = MailClient(mail, config)
+    message = EmailMessage()
+
+    if certificate_failure:
+        deliver = client.send if protocol == "smtp" else client.copy_to_sent
+        with pytest.raises(MailSendException):
+            deliver(message)
+        assert not operations
+    elif protocol == "smtp":
+        assert client.send(message) == set()
+        assert operations == ["login", "send"]
+    else:
+        assert client.copy_to_sent(message)
+        assert operations == ["login", "append"]
+
+    assert len(contexts) == 1
+    assert contexts[0].verify_mode == ssl.CERT_REQUIRED
+    assert contexts[0].check_hostname
 
 
 def test_queue_renders_and_persists_mail_without_exposing_payload(
@@ -470,8 +652,8 @@ def test_mail_client_sends_mime_message_and_copies_it_to_imap(
             """
             return "BYE", [b"logout"]
 
-    monkeypatch.setattr(mails_repo, "SMTP", FakeSMTP)
-    monkeypatch.setattr(mails_repo, "IMAP4_SSL", FakeIMAP)
+    monkeypatch.setattr(mails_client, "SMTP", FakeSMTP)
+    monkeypatch.setattr(mails_client, "IMAP4_SSL", FakeIMAP)
 
     assert message["From"] == mail_config.sender
     assert message.get_content_type() == "multipart/alternative"
@@ -531,9 +713,10 @@ def test_template_values_cannot_inject_email_subject_headers(
     """
     incoming = incoming_mail()
     incoming.jinja_values[0].value = "service\nBcc: attacker@example.com"
+    repo = MailsRepository(database_session, mail_config)
 
     with pytest.raises(MailCompileException, match="must not contain line breaks"):
-        MailsRepository(database_session, mail_config).queue_mail(incoming)
+        repo.queue_mail(incoming)
 
 
 def test_api_accepts_queue_request_and_returns_only_tracking_data(
